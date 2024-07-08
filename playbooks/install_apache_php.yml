@@ -1,0 +1,52 @@
+---
+- name: Install PHP 8.3 with Apache on Ubuntu
+  hosts: srvr5
+  become: yes
+
+  tasks:
+    - name: Add PHP 8.3 PPA
+      ansible.builtin.apt_repository:
+        repo: ppa:ondrej/php
+        update_cache: yes
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Install required packages
+      ansible.builtin.apt:
+        name:
+          - apache2
+          - libapache2-mod-php8.3
+          - php8.3
+          - php8.3-common
+          - php8.3-opcache
+          - php8.3-cli
+          - php8.3-gd
+          - php8.3-curl
+          - php8.3-mysql
+        state: present
+
+    - name: Enable PHP 8.3 module
+      ansible.builtin.command: a2enmod php8.3
+      notify: Restart Apache
+
+    - name: Disable the default Apache site
+      ansible.builtin.command: a2dissite 000-default
+      notify: Restart Apache
+
+    - name: Create a new Apache site for PHP
+      ansible.builtin.template:
+        src: templates/php-site.conf.j2
+        dest: /etc/apache2/sites-available/php-site.conf
+      notify: Restart Apache
+
+    - name: Enable the new Apache site
+      ansible.builtin.command: a2ensite php-site
+      notify: Restart Apache
+
+  handlers:
+    - name: Restart Apache
+      ansible.builtin.service:
+        name: apache2
+        state: restarted
