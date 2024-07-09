@@ -1,0 +1,93 @@
+---
+- name: Installer et configurer les exporters pour Apache et MySQL
+  hosts: srvr5
+  become: yes
+  vars:
+    apache_exporter_version: "0.11.0"
+    mysqld_exporter_version: "0.14.0"
+    mysql_user: "exporter"
+    mysql_password: "exporter"  # Changez ceci pour un mot de passe sécurisé
+    mysql_root_user: "root"
+    mysql_root_password: "root"
+    utilisateur_distant: "ansible"
+    groupe_distant: "ansible"
+  
+  tasks:
+    # Apache Exporter
+    - name: Télécharger Apache Exporter
+      get_url:
+        url: "https://github.com/Lusitaniae/apache_exporter/releases/download/v{{ apache_exporter_version }}/apache_exporter-{{ apache_exporter_version }}.linux-amd64.tar.gz"
+        dest: "/tmp/apache_exporter-{{ apache_exporter_version }}.linux-amd64.tar.gz"
+
+    - name: Extraire Apache Exporter
+      unarchive:
+        src: "/tmp/apache_exporter-{{ apache_exporter_version }}.linux-amd64.tar.gz"
+        dest: /usr/local/bin
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+
+    - name: Créer le service Apache Exporter
+      template:
+        src: templates/apache_exporter.service.j2
+        dest: /etc/systemd/system/apache_exporter.service
+      notify: Restart Apache Exporter
+
+    # MySQL Exporter
+    - name: Télécharger MySQL Exporter
+      get_url:
+        url: "https://github.com/prometheus/mysqld_exporter/releases/download/v{{ mysqld_exporter_version }}/mysqld_exporter-{{ mysqld_exporter_version }}.linux-amd64.tar.gz"
+        dest: "/tmp/mysqld_exporter-{{ mysqld_exporter_version }}.linux-amd64.tar.gz"
+
+    - name: Extraire MySQL Exporter
+      unarchive:
+        src: "/tmp/mysqld_exporter-{{ mysqld_exporter_version }}.linux-amd64.tar.gz"
+        dest: /usr/local/bin
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+
+    - name: Créer l'utilisateur MySQL pour l'exporter
+      mysql_user:
+        login_user: "{{ mysql_root_user }}"
+        login_password: "{{ mysql_root_password }}"
+        name: "{{ mysql_user }}"
+        password: "{{ mysql_password }}"
+        host: "192.168.1.%"
+        priv: '*.*:PROCESS,REPLICATION CLIENT,SELECT'
+        state: present
+      ignore_errors: yes
+
+    - name: Créer le fichier de configuration MySQL Exporter
+      template:
+        src: templates/mysqld_exporter.cnf.j2
+        dest: "/home/{{ utilisateur_distant }}/.ansible/.mysqld_exporter.cnf"
+        #mode: '0600'
+        owner: "{{ utilisateur_distant }}"
+        group: "{{ groupe_distant }}"
+        mode: '0644'
+
+    - name: Créer le service MySQL Exporter
+      template:
+        src: templates/mysqld_exporter.service.j2
+        dest: /etc/systemd/system/mysqld_exporter.service
+      notify: Restart MySQL Exporter
+
+    - name: S'assurer que les services sont démarrés et activés
+      systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+        daemon_reload: yes
+      loop:
+        - apache_exporter
+        - mysqld_exporter
+
+  handlers:
+    - name: Restart Apache Exporter
+      systemd:
+        name: apache_exporter
+        state: restarted
+
+    - name: Restart MySQL Exporter
+      systemd:
+        name: mysqld_exporter
+        state: restarted

@@ -1,0 +1,94 @@
+---
+- name: Vérifier l'état des serveurs srvr5, srvr6, srvr7
+  hosts: nodes
+  become: yes
+  vars:
+    node_exporter_port: 9100
+
+  tasks:
+    - name: Vérifier si Node Exporter est en cours d'exécution
+      systemd:
+        name: node_exporter
+        state: started
+      register: node_exporter_status
+      ignore_errors: yes
+
+    - name: Afficher le statut de Node Exporter
+      debug:
+        msg: "Node Exporter est {{ 'en cours d''exécution' if node_exporter_status.status.ActiveState == 'active' else 'arrêté' }} sur {{ inventory_hostname }}"
+
+    - name: Vérifier l'accès HTTP à Node Exporter
+      uri:
+        url: "http://{{ ansible_host }}:{{ node_exporter_port }}/metrics"
+        method: GET
+        status_code: 200
+      register: node_exporter_http_check
+      retries: 3
+      delay: 5
+      until: node_exporter_http_check.status == 200
+      ignore_errors: yes
+
+    - name: Afficher le résultat de la vérification HTTP
+      debug:
+        msg: "Node Exporter est {{ 'accessible' if node_exporter_http_check.status == 200 else 'inaccessible' }} via HTTP sur {{ inventory_hostname }}"
+
+    - name: Vérifier l'espace disque
+      command: df -h /
+      register: disk_space
+      changed_when: false
+
+    - name: Afficher l'espace disque
+      debug:
+        msg: "Espace disque sur {{ inventory_hostname }}:\n{{ disk_space.stdout }}"
+
+    - name: Vérifier la charge système
+      command: uptime
+      register: system_load
+      changed_when: false
+
+    - name: Afficher la charge système
+      debug:
+        msg: "Charge système sur {{ inventory_hostname }}:\n{{ system_load.stdout }}"
+
+    - name: Vérifier la mémoire disponible
+      command: free -h
+      register: memory_status
+      changed_when: false
+
+    - name: Afficher le statut de la mémoire
+      debug:
+        msg: "Statut de la mémoire sur {{ inventory_hostname }}:\n{{ memory_status.stdout }}"
+
+    - name: Vérifier les processus en cours d'exécution
+      shell: ps aux | head -n 5
+      register: running_processes
+      changed_when: false
+
+    - name: Afficher les processus en cours d'exécution
+      debug:
+        msg: "Principaux processus sur {{ inventory_hostname }}:\n{{ running_processes.stdout }}"
+
+    - name: Vérifier les mises à jour disponibles (pour Debian/Ubuntu)
+      shell: apt list --upgradable
+      register: available_updates
+      changed_when: false
+      when: ansible_os_family == "Debian"
+
+    - name: Vérifier les mises à jour disponibles (pour RedHat/CentOS)
+      shell: yum check-update
+      register: available_updates
+      changed_when: false
+      when: ansible_os_family == "RedHat"
+
+    - name: Afficher les mises à jour disponibles
+      debug:
+        msg: "Mises à jour disponibles sur {{ inventory_hostname }}:\n{{ available_updates.stdout }}"
+
+    - name: Vérifier les ports ouverts
+      shell: ss -tuln | grep LISTEN
+      register: open_ports
+      changed_when: false
+
+    - name: Afficher les ports ouverts
+      debug:
+        msg: "Ports ouverts sur {{ inventory_hostname }}:\n{{ open_ports.stdout }}"
